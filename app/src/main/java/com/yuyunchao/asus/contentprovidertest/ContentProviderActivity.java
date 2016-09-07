@@ -12,19 +12,23 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ListView;
+import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class ContentProviderActivity extends Activity {
+    ListView lv_img;
     TextView tv_img;
-    Button btn_search,btn_delete,btn_update;
+    Button btn_search,btn_delete,btn_update,btn_insert;
     EditText et_id;
     //EditText中输入的内容
     String mSearchString;
     //查询的条件
     String mSelectionClause;
-    //查询条件的参数
-    String[] mSelectionArgs = new String[1];
+
+
+    SimpleCursorAdapter mSimpleCursorAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,10 +37,12 @@ public class ContentProviderActivity extends Activity {
         initView();
     }
     private void initView(){
+        lv_img = (ListView) findViewById(R.id.lv_img);
         tv_img = (TextView) findViewById(R.id.tv_img);
         btn_search = (Button) findViewById(R.id.btn_search);
         btn_delete = (Button) findViewById(R.id.btn_delete);
         btn_update = (Button) findViewById(R.id.btn_update);
+        btn_insert = (Button) findViewById(R.id.btn_insert);
         et_id = (EditText) findViewById(R.id.et_id);
 //        queryImg();
 //        querySingleImg();
@@ -58,6 +64,8 @@ public class ContentProviderActivity extends Activity {
         //输入的查询参数（为ID）
         mSearchString = et_id.getText().toString();
         //当查询条件为空时，查询所有
+        //查询条件的参数
+        String[] mSelectionArgs = {""};
         if(TextUtils.isEmpty(mSearchString)){
             mSelectionClause = null;
             mSelectionArgs = null;
@@ -72,9 +80,9 @@ public class ContentProviderActivity extends Activity {
 
         Cursor mCursor = getContentResolver().query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,//URI
-                mProjection,//相当于COLUMNS
-                mSelectionClause,//WHERE条件
-                mSelectionArgs,//相当于WHERE ARGS
+                mProjection,        //相当于COLUMNS
+                mSelectionClause,   //WHERE条件
+                mSelectionArgs,     //相当于WHERE ARGS
                 null
         );
         //当游标没有被正确实例化时
@@ -85,27 +93,40 @@ public class ContentProviderActivity extends Activity {
         //当游标中没有相应的数据时
         else if(mCursor.getCount()<1){
             Toast.makeText(this, "没有相应的图片信息，请重新输入！", Toast.LENGTH_SHORT).show();
-        }else{
-            //当游标不为空时,遍历游标
-            if(mCursor != null && mCursor.getCount() > 0){
-                //确定需要的数据的下标，减少IndexOrThrow的调用，提高效率
-                int idIndex = mCursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-                int displayNameIndex = mCursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                //移动游标到第一行
-                mCursor.moveToFirst();
-                //数据的拼接字符串
-                String temp = "";
-                do{
-                    String id = mCursor.getString(idIndex);
-                    String displayName = mCursor.getString(displayNameIndex);
-                    temp += "id = "+id +"\ndisplayName = "+ displayName+"\n";
-                }while (mCursor.moveToNext());
-                //关闭游标
-                mCursor.close();
-                //设置UI
-                tv_img.setText(temp);
-            }
         }
+        else{
+//            //当游标不为空时,遍历游标
+//            if(mCursor != null && mCursor.getCount() > 0){
+//                //确定需要的数据的下标，减少IndexOrThrow的调用，提高效率
+//                int idIndex = mCursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+//                int displayNameIndex = mCursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
+//                //移动游标到第一行
+//                mCursor.moveToFirst();
+//                //数据的拼接字符串
+//                String temp = "";
+//                do{
+//                    String id = mCursor.getString(idIndex);
+//                    String displayName = mCursor.getString(displayNameIndex);
+//                    temp += "id = "+id +"\ndisplayName = "+ displayName+"\n";
+//                }while (mCursor.moveToNext());
+                //构建简易适配器展示数据的控件列表
+                int[] mImageListItems = new int[]{
+                        R.id.tv_item_id,
+                        R.id.tv_item_display
+                };
+                //初始化SimpleCursorAdapter
+                mSimpleCursorAdapter = new SimpleCursorAdapter(
+                        this,                   //上下文
+                        R.layout.item_cursor,   //子item的布局
+                        mCursor,                //存放数据的游标
+                        mProjection,
+                        mImageListItems,
+                        0
+                );
+                //设置UI
+                lv_img.setAdapter(mSimpleCursorAdapter);
+            }
+//        }
 
 
     }
@@ -144,9 +165,10 @@ public class ContentProviderActivity extends Activity {
     /**
      * ContentProvider插入图片
      */
-    private void insertImg(){
+    public void insertImg(View view){
         //要插入的图片的数据
         ContentValues mCV = new ContentValues();
+        mCV.put(MediaStore.Images.Media.DISPLAY_NAME, "new");
         mCV.put(MediaStore.Images.Media.HEIGHT, 500);
         mCV.put(MediaStore.Images.Media.WIDTH, 500);
 
@@ -154,28 +176,36 @@ public class ContentProviderActivity extends Activity {
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 mCV
                 );
+        tv_img.setText(ContentUris.parseId(mUri)+"");
+
     }
     /**
      * ContentProvider更改图片
      */
-    private void upDataImg(String id){
+    public void upDataImg(View view){
         ContentValues mCV = new ContentValues();
-        mCV.put(MediaStore.Images.Media.WIDTH, 200);
-        getContentResolver().update(
+        mCV.put(MediaStore.Images.Media.DISPLAY_NAME, "已更改");
+        mSelectionClause = MediaStore.Images.Media.DISPLAY_NAME + " like ?";
+        String[] mSelectionArgs = {"new"};
+        int mRowUpdate = getContentResolver().update(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 mCV,
-                MediaStore.Images.Media._ID + "="+id,
-                null
+                mSelectionClause,
+                mSelectionArgs
         );
+        tv_img.setText("更改了" + mRowUpdate + "张图片");
     }
     /**
-     * ContentProvider删除图片n
+     * ContentProvider删除图片
      */
-    private void deleteImg(String id){
-        getContentResolver().delete(
+    public void deleteImg(View view){
+        mSelectionClause = MediaStore.Images.Media.DISPLAY_NAME + " like ?";
+        String[] mSelectionArgs={"已更改"};
+        int mRowDelete= getContentResolver().delete(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                MediaStore.Images.Media._ID + "=" + id,
-                null
+                mSelectionClause,
+                mSelectionArgs
         );
+        tv_img.setText("删除了" + mRowDelete + "张图片");
     }
 }
