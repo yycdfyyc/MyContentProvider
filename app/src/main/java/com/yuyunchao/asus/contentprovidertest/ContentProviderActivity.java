@@ -1,11 +1,19 @@
 package com.yuyunchao.asus.contentprovidertest;
 
 import android.app.Activity;
+import android.app.LoaderManager;
+import android.content.ContentProviderOperation;
+import android.content.ContentProviderResult;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.CursorLoader;
+import android.content.Loader;
+import android.content.OperationApplicationException;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.RemoteException;
+import android.provider.ContactsContract;
 import android.provider.MediaStore;
 import android.text.TextUtils;
 import android.util.Log;
@@ -17,16 +25,17 @@ import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class ContentProviderActivity extends Activity {
+import java.util.ArrayList;
+
+public class ContentProviderActivity extends Activity implements LoaderManager.LoaderCallbacks<Cursor>{
     ListView lv_img;
     TextView tv_img;
-    Button btn_search,btn_delete,btn_update,btn_insert;
+    Button btn_search,btn_delete,btn_update,btn_insert,btn_loader;
     EditText et_id;
     //EditText中输入的内容
     String mSearchString;
     //查询的条件
     String mSelectionClause;
-
 
     SimpleCursorAdapter mSimpleCursorAdapter;
 
@@ -43,12 +52,15 @@ public class ContentProviderActivity extends Activity {
         btn_delete = (Button) findViewById(R.id.btn_delete);
         btn_update = (Button) findViewById(R.id.btn_update);
         btn_insert = (Button) findViewById(R.id.btn_insert);
+        btn_loader = (Button) findViewById(R.id.btn_loader);
         et_id = (EditText) findViewById(R.id.et_id);
 //        queryImg();
 //        querySingleImg();
 //        insertImg();
 //        upDataImg("54");
 //        deleteImg("48");
+//        batchOperateContacts();
+        getLoaderManager().initLoader(0,null,this);
     }
 
     /**
@@ -208,4 +220,143 @@ public class ContentProviderActivity extends Activity {
         );
         tv_img.setText("删除了" + mRowDelete + "张图片");
     }
+
+    /**
+     * 批量操作通讯录数据
+     */
+    private void  batchOperateContacts(){
+        //定义一个存储批量操作的集合
+        ArrayList<ContentProviderOperation> cpo = new ArrayList<>();
+        //添加一个插入新通讯录数据的操作
+        cpo.add(
+                ContentProviderOperation
+                        .newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                        .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                        .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                .build()
+        );
+        //构建选择语句
+        String mSelectionClause = ContactsContract.RawContacts._ID + "=1";
+        //添加一个删除某条通讯录数据的操作
+        cpo.add(
+                ContentProviderOperation
+                .newDelete(ContactsContract.RawContacts.CONTENT_URI)
+                .withSelection(mSelectionClause, null)
+                .build()
+        );
+        //添加一个通讯录断点查询的操作
+        cpo.add(
+                ContentProviderOperation
+                .newAssertQuery(ContactsContract.RawContacts.CONTENT_URI)
+                .withSelection(mSelectionClause, null)
+                .withExpectedCount(0)
+                .build()
+        );
+        //通过之前下下标为0的的ContentProviderOperation返回的
+        // Uri中的ContactsContract.Data.RAW_CONTACT_ID作为选择条件插入数据
+        //data表与raw_contacts是关联的关系
+        cpo.add(
+                ContentProviderOperation
+                        //要插入数据的uri
+                        .newInsert(ContactsContract.Data.CONTENT_URI)
+                        //根据批处理的第一次操作所返回的ContactsContract.Data.CONTACT_ID来进行插入数据操作
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, 0)
+                        //DATA1代表了电话号码,给该联系人插入一条电话数据
+                        .withValue(ContactsContract.Data.DATA1, "18757338996")
+                        //在给Data表插入数据时必须制定该条数据的MIME类型
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                        .build()
+        );
+
+        try {
+            //保存批处理的操作结果
+            ContentProviderResult[] results =
+                    //执行批处理操作
+                    getContentResolver().applyBatch(ContactsContract.AUTHORITY, cpo);
+            //保存操作结果的临时变量
+            String temp = "";
+            //遍历结果
+            for (int i = 0; i< results.length; i ++){
+                temp += results[i].toString() + "\n\n";
+            }
+            //更新UI
+            tv_img.setText(temp);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        } catch (OperationApplicationException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void searchContacts(View view){
+        //当改变查询条件时
+        getLoaderManager().restartLoader(0, null, this);
+    }
+    //创建一个加载器 返回一个Loader （CursorLoader）
+    @Override
+    public Loader onCreateLoader(int id, Bundle args) {
+        //要查询的uri
+        Uri mUri = ContactsContract.Contacts.CONTENT_URI;
+        //要查询的列
+        String[] mProjection = new String[]{
+                ContactsContract.Contacts._ID,//id
+                ContactsContract.Contacts.DISPLAY_NAME//显示的名称
+        };
+        //用户的选择条件
+        String mFilter = et_id.getText().toString();
+        //判断用户的选择条件
+        if(TextUtils.isEmpty(mFilter)){
+            mFilter = "0";
+        }
+        //判断输入的信息
+        if(mFilter.matches("\\d*")){
+        }else {
+            Toast.makeText(this, "请输入数字", Toast.LENGTH_SHORT).show();
+            mFilter = "0";
+        }
+
+        //选择条件,已有ID大于用户输入的ID
+        String mSelection = ContactsContract.Contacts._ID + " > " + mFilter;
+        return new CursorLoader(
+                this,//上下文
+                mUri,//要查询的uri
+                mProjection,//要查询的列
+                mSelection,//查询条件
+                null,
+                ContactsContract.Contacts.DISPLAY_NAME + " COLLATE LOCALIZED ASC"//根据本地语言进行排序
+        );
+    }
+    //创建结束后用查询来的data设置UI
+    @Override
+    public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
+        //要查询的数据index
+        int i_id = data.getColumnIndexOrThrow(ContactsContract.Contacts._ID);
+        int i_display = data.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME);
+        //临时存储查询数据的字符串
+        String temp = "";
+        //如若数据条目正确,开始遍历
+        while (data.moveToNext()){
+            String id = data.getString(i_id);
+            String displayName = data.getString(i_display);
+            //更新临时字符串
+            temp += "id = " + id + "\n" +
+                    "displayName = " + displayName + "\n\n";
+        }
+        //设置UI
+        tv_img.setText(temp);
+
+    }
+
+    @Override
+    public void onLoaderReset(Loader loader) {
+        //释放数据
+        tv_img.setText("");
+    }
 }
+
+
+
+
+
+
+
